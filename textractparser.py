@@ -1,15 +1,17 @@
 import boto3
 import re
 import pandas as pd
+import numpy as np
 
 # Document
 s3BucketName = "receiptscanclientimagepipeline"
-documentName = "GroceryStoreReceipt.jpg"
+documentName = "ItemizedRestaurantReceipt.jpg"
 
-W
 # Amazon Textract client
 textract = boto3.client('textract')
+s3client=boto3.client('s3')
 
+"""
 # Call Amazon Textract
 response = textract.detect_document_text(
     Document={
@@ -20,7 +22,7 @@ response = textract.detect_document_text(
     })
 
 #print(response)
-
+"""
 
 products=[]
 for item in response["Blocks"]:
@@ -39,82 +41,137 @@ for text in range(len(products)):
             items.append(products[text+1])
     except IndexError:
         pass
-    
-unique = []
-[unique.append(x) for x in items if x not in unique]
 
-items=[]
-prices=[]
-# Separate prices and possible items
-for text in range(len(unique)):
-    if unique[text][0]!="$":
-        items.append(unique[text])
+prodprice=[]
+actualprod=[]
+unique = []
+[unique.append(x) for x in items]
+for i in range(len(unique)):
+    if "$" in unique[i]:
+        prodprice.append(unique[i])
     else:
-        prices.append(unique[text])
-        
-finalprod=[]
+        try:
+            int(unique[i])
+        except ValueError:
+            actualprod.append(unique[i])
+# Separate prices and possible items
+finalproducts=[]
+position=0
+
 # Separate items from total, taxes, and credit cards
-for product in items:
+for product in actualprod:
+    item=product.upper()
+    creditnumbers=re.findall("\d+", product)
+    if "TOTAL" in item:
+        prodprice.remove(prodprice[position])
+        position-=1
+    elif "PURCHASE" in item:
+        prodprice.remove(prodprice[position])
+        position-=1
+    elif "TAX" in item:
+        prodprice.remove(prodprice[position])
+        position-=1
+    elif "XXX" in item:
+        prodprice.remove(prodprice[position])
+        position-=1
+    elif "###" in item:
+        prodprice.remove(prodprice[position])
+        position-=1
+    elif "VISA" in item:
+        prodprice.remove(prodprice[position])
+        position-=1
+    elif "AMT" in item:
+        prodprice.remove(prodprice[position])
+        position-=1
+    elif "AMOUNT" in item:
+        prodprice.remove(prodprice[position])
+    elif "BALANCE" in item:
+        prodprice.remove(prodprice[position])
+        position-=1
+    elif int(creditnumbers[0])>1000:
+        prodprice.remove(prodprice[position])
+        position-=1
+    else:
+        finalproducts.append(product)
+
+    position+=1        
+    
+# To fix wrong things in the cost list
+finalproductcost=[]
+
+for possibleprice in prodprice:
+    item=possibleprice.upper()
+    creditnumbers=re.findall("\d+(?:\.\d+)?", possibleprice)[0]
+    print(creditnumbers)
     try:
-        int(product)
-    except ValueError:
-        if ("TOTAL") in product:
+        if "TOTAL" in item:
             pass
-        elif "PURCHASE" in product:
+        elif "PURCHASE" in item:
             pass
-        elif "TAX" in product:
+        elif "TAX" in item:
+            pass
+        elif "XXX" in item:
+            pass
+        elif "###" in item:
+            pass
+        elif "VISA" in item:
+            pass
+        elif "AMT" in item:
+            pass
+        elif "AMOUNT" in item:
+            pass
+        elif "BALANCE" in item:
+            pass
+        elif float(creditnumbers)>1000:
             pass
         else:
-            valuesearch=re.findall("\d+", product)
-            allvalues=[int(valuesearch[i]) for i in range(len(valuesearch))]
+            price1=re.findall("\$\d+(?:\.\d+)?", possibleprice)[0]
+            price2=re.findall("\d+(?:\.\d+)?", possibleprice)[0]
             try:
-                if max(allvalues) < 10000:
-                    finalprod.append(product)
+                float(price2)
+                finalproductcost.append(price1)
+                pos=prodprice.index(possibleprice)
+                nocost=possibleprice.replace(price1, "")
+                if nocost[0].isalpha()==True:
+                    finalproducts.insert(pos, nocost)
             except ValueError:
-                finalprod.append(product)
-            
-single=[]
-
-# Solve accidental price and item combination from Textract
-for prod in finalprod:
-    try:
-        price=re.findall("\$\d+(?:\.\d+)?", prod)
-        dollarvalue=price[0]
-        finalvalue=float(dollarvalue.replace("$",""))
-        item=prod.replace(dollarvalue, "")
-        position=finalprod.index(prod)
-        single.append(item)
-        prices.insert(position, finalvalue)
+                pass
+        
     except IndexError:
-        single.append(prod)
+        pass
+
+# Get rid of quantities
+cleaningquant=[]
+for firstval in finalproducts:
+    if firstval[0].isalpha()==False:
+        secondval=firstval[1:].lstrip()
+        cleaningquant.append(secondval)
+        continue
+
+    cleaningquant.append(firstval)
 
 intcosts=[]
+
 # Turn prices into floats
-for entries in prices:
+for entries in finalproductcost:
     try:
         errors=entries.replace(" ", "")
         price=re.findall("\$\d+(?:\.\d+)?", entries)
         dollarvalue=price[0]
         finalvalue=float(dollarvalue.replace("$",""))
         intcosts.append(finalvalue)
-    except AttributeError:
+    except IndexError:
         intcosts.append(entries)
 
-# Check for if total value is included or multiple total values included
-total=max(intcosts)
-placement=intcosts.index(total)
-intcosts.remove(total)
-count=0
-while max(intcosts)-1 < total and total < max(intcosts)+1:
-    count=1
-    currentmax=max(intcosts)
-    intcosts.remove(currentmax)
-
-if count==0:
-    intcosts.insert(placement, total)
-
-    
-print(single)
+print(cleaningquant)
 print(intcosts)
 
-# Next step, convert lists to dataframe and format the JSON
+# Get JSON file
+fullprodlist=np.asarray(cleaningquant)
+fullcostlist=np.asarray(intcosts)
+
+df = pd.DataFrame()
+df["Item"]=fullprodlist
+df["Price"]=fullcostlist
+
+jsfile=df.to_json(orient='index')
