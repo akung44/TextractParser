@@ -5,13 +5,14 @@ import numpy as np
 
 # Document
 s3BucketName = "receiptscanclientimagepipeline"
-documentName = "ItemizedRestaurantReceipt.jpg"
+documentName = "StandardItemized.jpg"
 
+"""
 # Amazon Textract client
 textract = boto3.client('textract')
 s3client=boto3.client('s3')
 
-"""
+
 # Call Amazon Textract
 response = textract.detect_document_text(
     Document={
@@ -60,41 +61,49 @@ position=0
 
 # Separate items from total, taxes, and credit cards
 for product in actualprod:
-    item=product.upper()
-    creditnumbers=re.findall("\d+", product)
-    if "TOTAL" in item:
-        prodprice.remove(prodprice[position])
-        position-=1
-    elif "PURCHASE" in item:
-        prodprice.remove(prodprice[position])
-        position-=1
-    elif "TAX" in item:
-        prodprice.remove(prodprice[position])
-        position-=1
-    elif "XXX" in item:
-        prodprice.remove(prodprice[position])
-        position-=1
-    elif "###" in item:
-        prodprice.remove(prodprice[position])
-        position-=1
-    elif "VISA" in item:
-        prodprice.remove(prodprice[position])
-        position-=1
-    elif "AMT" in item:
-        prodprice.remove(prodprice[position])
-        position-=1
-    elif "AMOUNT" in item:
-        prodprice.remove(prodprice[position])
-    elif "BALANCE" in item:
-        prodprice.remove(prodprice[position])
-        position-=1
-    elif int(creditnumbers[0])>1000:
-        prodprice.remove(prodprice[position])
-        position-=1
-    else:
+    try:
+        item=product.upper()
+        creditnumbers=re.findall("\d+(?:\.\d+)", product)
+        if "TOTAL" in item:
+            prodprice.remove(prodprice[position])
+            position-=1
+        elif "/" in item:
+            prodprice.remove(prodprice[position])
+            position-=1            
+        elif "PURCHASE" in item:
+            prodprice.remove(prodprice[position])
+            position-=1
+        elif "TAX" in item:
+            prodprice.remove(prodprice[position])
+            position-=1
+        elif "XXX" in item:
+            prodprice.remove(prodprice[position])
+            position-=1
+        elif "###" in item:
+            prodprice.remove(prodprice[position])
+            position-=1
+        elif "VISA" in item:
+            prodprice.remove(prodprice[position])
+            position-=1
+        elif "AMT" in item:
+            prodprice.remove(prodprice[position])
+            position-=1
+        elif "AMOUNT" in item:
+            prodprice.remove(prodprice[position])
+        elif "BALANCE" in item:
+            prodprice.remove(prodprice[position])
+            position-=1
+        elif int(creditnumbers[0])>1000:
+            prodprice.remove(prodprice[position])
+            position-=1
+        else:
+            finalproducts.append(product)
+        position+=1        
+    
+    except IndexError:
+        position+=1
         finalproducts.append(product)
-
-    position+=1        
+        pass
     
 # To fix wrong things in the cost list
 finalproductcost=[]
@@ -102,7 +111,6 @@ finalproductcost=[]
 for possibleprice in prodprice:
     item=possibleprice.upper()
     creditnumbers=re.findall("\d+(?:\.\d+)?", possibleprice)[0]
-    print(creditnumbers)
     try:
         if "TOTAL" in item:
             pass
@@ -121,6 +129,8 @@ for possibleprice in prodprice:
         elif "AMOUNT" in item:
             pass
         elif "BALANCE" in item:
+            pass
+        elif "/" in item:
             pass
         elif float(creditnumbers)>1000:
             pass
